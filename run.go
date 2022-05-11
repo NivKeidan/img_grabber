@@ -48,7 +48,7 @@ func errorOut(err error) {
 
 	fmt.Println("Error occurred!")
 	fmt.Println("Error details are in file:", fileName)
-	os.Exit(1)
+	doExit(1)
 }
 
 func getInput() {
@@ -56,11 +56,10 @@ func getInput() {
 	var err error
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Print("paste url (or q to exit): ")
-	debugObject.Input, err = reader.ReadString('\n')
+	debugObject.Input, err = reader.ReadString('\r')
 	if err != nil {
 		errorOut(err)
 	}
-	debugObject.Input = strings.Replace(debugObject.Input, "\n", "", -1)
 	if debugObject.Input == "" {
 		errorOut(fmt.Errorf("input is empty"))
 	}
@@ -130,15 +129,19 @@ func extractImgPathsFromHtml() []string {
 	return imgPaths
 }
 
+func doExit(statusCode int) {
+	fmt.Println("shtok shtok")
+	time.Sleep(1* time.Second)
+	os.Exit(statusCode)
+}
+
 func main() {
 	for {
 		resetDebugObject()
 		getInput()
 
 		if inputIsExit() {
-			fmt.Println("shtok shtok")
-			time.Sleep(1 * time.Second)
-			os.Exit(0)
+			doExit(0)
 		}
 
 		t := time.Now()
