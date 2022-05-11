@@ -23,6 +23,7 @@ type DebugObject struct {
 	CurrentPhase string
 	Html string
 	DownloadUrl string
+	Error string
 }
 
 var debugObject *DebugObject
@@ -33,10 +34,12 @@ func resetDebugObject() {
 		CurrentPhase: "",
 		Html: "",
 		DownloadUrl: "",
+		Error: "",
 	}
 }
 
 func errorOut(err error) {
+	debugObject.Error = err.Error()
 	ts := time.Now().Unix()
 	fileName := fmt.Sprintf("error_%d.json", ts)
 
