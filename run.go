@@ -52,14 +52,19 @@ func errorOut(err error) {
 }
 
 func getInput() {
-	debugObject.CurrentPhase = "getInput"
-	var err error
-	reader := bufio.NewReader(os.Stdin)
+	debugObject.CurrentPhase = "getInput-scan"
 	fmt.Print("paste url (or q to exit): ")
-	debugObject.Input, err = reader.ReadString('\r')
-	if err != nil {
-		errorOut(err)
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Scan()
+	if scanner.Err() != nil {
+		errorOut(scanner.Err())
 	}
+	debugObject.CurrentPhase = "getInput-parse"
+	debugObject.Input = scanner.Text()
+	if scanner.Err() != nil {
+		errorOut(scanner.Err())
+	}
+	
 	if debugObject.Input == "" {
 		errorOut(fmt.Errorf("input is empty"))
 	}
