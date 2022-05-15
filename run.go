@@ -1,8 +1,5 @@
 package main
 
-// TODO:
-// add parrallelism for image downloading
-
 import (
 	"bufio"
 	"encoding/json"
@@ -13,8 +10,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -28,6 +27,43 @@ type DebugObject struct {
 
 var debugObject *DebugObject
 
+func main() {
+	for {
+		resetDebugObject()
+		getInput()
+
+		if inputIsExit() {
+			doExit(0)
+		}
+
+		basePath := extractBasePathForImagesFromUrl()
+		getHtmlResponse()
+
+		imgPaths := extractImgPathsFromHtml()
+
+		fmt.Printf("found %d images. Enter name: ", len(imgPaths))
+		var wg sync.WaitGroup
+		wg.Add(len(imgPaths))
+		inputName := getInputName()
+		createDir(inputName)
+
+		for i, imgPath := range imgPaths {
+			imgSuffix := getImageSuffix(imgPath)
+			fileName := fmt.Sprintf("%d.%s", i+1, imgSuffix)
+			filePath := path.Join(inputName, fileName)
+			
+			finalUrl := fmt.Sprintf("%s%s", basePath, imgPath)
+			go func(url string, filePath string, ind int) {
+				downloadFile(url, filePath)
+				fmt.Printf("downloaded image %d\n", ind+1)
+				wg.Done()
+			}(finalUrl, filePath, i)
+		}
+		wg.Wait()
+		fmt.Println()
+	}
+}
+
 func resetDebugObject() {
 	debugObject = &DebugObject{
 		Input: "",
@@ -36,19 +72,6 @@ func resetDebugObject() {
 		DownloadUrl: "",
 		Error: "",
 	}
-}
-
-func errorOut(err error) {
-	debugObject.Error = err.Error()
-	ts := time.Now().Unix()
-	fileName := fmt.Sprintf("error_%d.json", ts)
-
-	file, _ := json.MarshalIndent(debugObject, "", " ")
-	_ = ioutil.WriteFile(fileName, file, 0644)
-
-	fmt.Println("Error occurred!")
-	fmt.Println("Error details are in file:", fileName)
-	doExit(1)
 }
 
 func getInput() {
@@ -94,6 +117,57 @@ func extractBasePathForImagesFromUrl() string {
 	return fmt.Sprintf("%s://%s%s", inputUrl.Scheme, inputUrl.Host, match2[0])
 }
 
+func getInputName() string {
+	debugObject.CurrentPhase = "getInputName"
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Scan()
+	if scanner.Err() != nil {
+		errorOut(scanner.Err())
+	}
+	debugObject.CurrentPhase = "getInputName-parse"
+	input := scanner.Text()
+	if scanner.Err() != nil {
+		errorOut(scanner.Err())
+	}
+	
+	if input == "" {
+		input = getDefaultName()
+	}
+	return input
+}
+
+func getDefaultName() string {
+	return time.Now().Format("2006-01-02T15-04-05")
+}
+
+func exists(path string) (bool, error) {
+    _, err := os.Stat(path)
+    if err == nil { return true, nil }
+    if os.IsNotExist(err) { return false, nil }
+    return false, err
+}
+
+func createDir(dirName string) {
+	debugObject.CurrentPhase = "createDir"
+	exists, err := exists(dirName)
+	if err != nil {
+		errorOut(err)
+	}
+	if exists {
+		errorOut(fmt.Errorf("name already exists"))
+	}
+	os.Mkdir(dirName, os.ModePerm)
+}
+
+func getImageSuffix(imgUrl string) string {
+	debugObject.CurrentPhase = "getImageSuffix"
+	splitted := strings.Split(imgUrl, ".")
+	if len(splitted) < 2 {
+		errorOut(fmt.Errorf("cant extract img suffix from %s", imgUrl))
+	}
+	return splitted[len(splitted)-1]
+}
+
 func getHtmlResponse() {
 	debugObject.CurrentPhase = "getHtmlResponse"
 	fmt.Println("getting HTML...")
@@ -134,43 +208,7 @@ func extractImgPathsFromHtml() []string {
 	return imgPaths
 }
 
-func doExit(statusCode int) {
-	fmt.Println("shtok shtok")
-	time.Sleep(1* time.Second)
-	os.Exit(statusCode)
-}
-
-func main() {
-	for {
-		resetDebugObject()
-		getInput()
-
-		if inputIsExit() {
-			doExit(0)
-		}
-
-		t := time.Now()
-		fileNamePrefix := fmt.Sprintf("%d_%d_%d", t.Hour(), t.Minute(), t.Second())
-
-		basePath := extractBasePathForImagesFromUrl()
-		getHtmlResponse()
-
-		imgPaths := extractImgPathsFromHtml()
-
-		fmt.Printf("found %d images\n", len(imgPaths))
-
-		for i, imgPath := range imgPaths {
-			fileName := fmt.Sprintf("%s-%d", fileNamePrefix, i+1)
-			finalPath := fmt.Sprintf("%s%s", basePath, imgPath)
-			downloadFile(finalPath, fileName)
-			fmt.Printf("downloaded image %d as %s\n", i+1, fileName)
-		}
-		fmt.Println()
-	}
-	
-}
-
-func downloadFile(URL, fileName string) {
+func downloadFile(URL, filePath string) {
 	debugObject.DownloadUrl = URL
 	debugObject.CurrentPhase = "downloadFile"
 
@@ -185,7 +223,7 @@ func downloadFile(URL, fileName string) {
 		errorOut(errors.New("Received non 200 response code"))
 	}
 	//Create a empty file
-	file, err := os.Create(fileName)
+	file, err := os.Create(filePath)
 	if err != nil {
 		errorOut(err)
 	}
@@ -196,4 +234,23 @@ func downloadFile(URL, fileName string) {
 	if err != nil {
 		errorOut(err)
 	}
+}
+
+func doExit(statusCode int) {
+	fmt.Println("shtok shtok")
+	time.Sleep(1* time.Second)
+	os.Exit(statusCode)
+}
+
+func errorOut(err error) {
+	debugObject.Error = err.Error()
+	ts := time.Now().Unix()
+	fileName := fmt.Sprintf("error_%d.json", ts)
+
+	file, _ := json.MarshalIndent(debugObject, "", " ")
+	_ = ioutil.WriteFile(fileName, file, 0644)
+
+	fmt.Println("Error occurred!")
+	fmt.Println("Error details are in file:", fileName)
+	doExit(1)
 }
